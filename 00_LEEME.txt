@@ -1,0 +1,32 @@
+ENTORNO DEL CURSO - EXTRACCION DOCUMENTAL
+=========================================
+
+Este repositorio deja lista una maquina virtual Windows del curso, aunque sea nueva.
+Contiene solo codigo del curso y datos ficticios.
+
+QUE CONTIENE
+  01_instalar_vm.ps1        Instala Python 3.12, Git, Java, Tesseract (espanol), Ollama,
+                            el entorno virtual y las librerias. Se puede repetir sin riesgo:
+                            lo que ya esta instalado se omite.
+  02_requirements.txt       Librerias del curso con versiones fijas.
+  03_verificar_entorno.py   Revisa que todo este bien. Debe terminar en 0 errores.
+  04_Pipeline_por_sesion/   Punto de partida de pipeline_sbs al iniciar cada sesion.
+
+PASOS EN UNA VM NUEVA (PowerShell)
+  1. Clonar el repositorio:
+       cd C:\curso\trabajo
+       git clone https://github.com/jonatanfigueroagil-creator/entorno-extraccion-documental.git
+       cd entorno-extraccion-documental
+  2. Instalar (PowerShell como administrador; tarda varios minutos):
+       powershell -NoProfile -ExecutionPolicy Bypass -File .\01_instalar_vm.ps1
+  3. Verificar:
+       C:\curso\venv\Scripts\python.exe .\03_verificar_entorno.py
+     El resumen final debe decir 0 errores. Los avisos son aceptables.
+
+SI ALGO FALLA
+  - El registro del instalador queda en C:\curso\trabajo\instalacion.log
+  - El de las librerias, en C:\curso\trabajo\pip_requirements.log
+  - Se necesita salida a Internet (python.org, github.com, pypi.org, ollama.com).
+  - Las versiones de las librerias no se actualizan por cuenta propia: algunas dependen entre si.
+
+Los datos del curso son ficticios. No se suben documentos reales a servicios de Internet.
