@@ -144,7 +144,7 @@ if (Test-Path $traer) { & $traer; if ($LASTEXITCODE -eq 0) { Anotar "OK" "datos 
 
 # 8. GPU y modelo
 if (Existe "nvidia-smi") { Anotar "OK" "GPU" ((& nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader) -join "; ") }
-else { Anotar "ERROR" "GPU" "nvidia-smi no está: falta el controlador NVIDIA (pedir a soporte la extensión de GPU de Azure)" }
+else { Anotar "AVISO" "GPU" "nvidia-smi no está: falta el controlador NVIDIA; se necesita desde la sesión 4 (pedir a soporte la extensión de GPU de Azure)" }
 if ($ConOllama -and -not $SinModelo -and (Existe "ollama")) {
     Anotar "INFO" "modelo" "descargando $Modelo"
     & ollama pull $Modelo 2>&1 | Select-Object -Last 1
