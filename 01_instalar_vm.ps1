@@ -121,7 +121,7 @@ if (Test-Path $venvPy) {
     if (Test-Path $Requirements) {
         Anotar "INFO" "pip" "instalando $Requirements (puede tardar varios minutos)"
         & $venvPy -m pip install --upgrade pip 2>&1 | Out-Null
-        & $venvPy -m pip install -r $Requirements 2>&1 | Tee-Object -FilePath "$Curso\trabajo\pip_requirements.log" | Select-Object -Last 3
+        & $venvPy -m pip install -r $Requirements 2>&1 | Tee-Object -FilePath "$Curso\trabajo\pip_requirements.log" | ForEach-Object { if ($_ -match "^(Collecting|Installing collected|Successfully|ERROR)") { Write-Host "  pip: $_" } }
         if ($LASTEXITCODE -eq 0) { Anotar "OK" "librerías del curso" "" } else { Anotar "ERROR" "librerías del curso" "ver pip_requirements.log" }
     } else { Anotar "ERROR" "requirements" "no existe $Requirements" }
     & $venvPy -m pip install "https://github.com/explosion/spacy-models/releases/download/es_core_news_md-3.8.0/es_core_news_md-3.8.0-py3-none-any.whl" 2>&1 | Select-Object -Last 1
