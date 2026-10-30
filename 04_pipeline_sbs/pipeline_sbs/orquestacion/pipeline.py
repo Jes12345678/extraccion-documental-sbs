@@ -100,3 +100,27 @@ def leer_lote(carpeta: str | Path) -> list[dict[str, Any]]:
         fila["segundos"] = time.perf_counter() - inicio
         registros.append(fila)
     return registros
+
+
+def normalizar_lote(registros: list[dict[str, Any]], umbral_ocr: int = 20) -> list[dict[str, Any]]:
+    """Etapa 2: normaliza el texto de los archivos ok y decide cuáles requieren OCR.
+
+    Un archivo ok requiere OCR si es una imagen o un PDF con menos de ``umbral_ocr`` caracteres por página.
+
+    Args:
+        registros: salida de ``leer_lote``.
+        umbral_ocr: caracteres por página por debajo de los cuales un PDF requiere OCR.
+
+    Returns:
+        Los mismos registros, con ``texto`` normalizado, ``caracteres`` y ``requiere_ocr`` completos.
+    """
+    for fila in registros:
+        fila["texto"] = ""
+        if fila["estado"] != "ok":
+            continue
+        texto = normalizar_texto(fila["texto_crudo"])
+        por_pagina = len(texto) / max(fila["paginas"], 1)
+        fila["texto"] = texto
+        fila["caracteres"] = len(texto)
+        fila["requiere_ocr"] = fila["formato"] in FORMATOS_IMAGEN or (fila["formato"] == "pdf" and por_pagina < umbral_ocr)
+    return registros
