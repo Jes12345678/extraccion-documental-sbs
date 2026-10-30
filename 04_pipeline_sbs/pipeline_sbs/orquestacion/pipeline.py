@@ -179,3 +179,28 @@ def calcular_estadisticas(tabla: pd.DataFrame) -> pd.DataFrame:
     filas = {tipo: resumir(grupo) for tipo, grupo in tabla.groupby("tipo", sort=True)}
     filas["TOTAL"] = resumir(tabla)
     return pd.DataFrame.from_dict(filas, orient="index")[columnas]
+
+
+def ejecutar_pipeline(carpeta: str | Path, config: dict[str, Any] | None = None) -> pd.DataFrame:
+    """Encadena leer, normalizar, registrar errores y estadísticas sobre una carpeta de archivos.
+
+    Args:
+        carpeta: carpeta con el lote (sin subcarpetas).
+        config: valores que reemplazan a ``ingesta`` de ``pipeline.yaml``: ``cuarentena`` (carpeta de
+            cuarentena) y ``umbral_ocr`` (caracteres por página).
+
+    Returns:
+        DataFrame con un registro por archivo (columnas de ``COLUMNAS``). Las estadísticas por tipo
+        quedan en ``tabla.attrs["estadisticas"]``.
+
+    Raises:
+        NotADirectoryError: si la carpeta no existe.
+    """
+    parametros = _parametros(config)
+    registros = leer_lote(carpeta)
+    registros = normalizar_lote(registros, parametros["umbral_ocr"])
+    errores = registrar_errores(registros, parametros["cuarentena"])
+    tabla = pd.DataFrame([{columna: fila[columna] for columna in COLUMNAS} for fila in registros], columns=COLUMNAS)
+    tabla.attrs["estadisticas"] = calcular_estadisticas(tabla)
+    registro.info("pipeline_terminado", extra={"archivos": len(tabla), "errores": errores})
+    return tabla
