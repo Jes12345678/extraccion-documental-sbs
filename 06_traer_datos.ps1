@@ -11,6 +11,7 @@ param(
     [switch]$Forzar
 )
 $ErrorActionPreference = "Stop"
+$Raiz = if ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { (Get-Location).Path }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $Marca = "01_Lote_S02"
 
@@ -35,7 +36,7 @@ try {
         if (-not $hallada) { throw "el archivo comprimido no contiene la carpeta $Marca" }
         $origen = $hallada.Parent.FullName
     } else {
-        $local = Join-Path $PSScriptRoot "05_Laboratorios\02_Datos_Practica"
+        $local = Join-Path $Raiz "05_Laboratorios\02_Datos_Practica"
         if (-not (Contiene $local)) { throw "no esta la carpeta 05_Laboratorios\02_Datos_Practica junto a este script; use -Zip" }
         $origen = $local
     }

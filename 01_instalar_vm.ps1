@@ -6,13 +6,15 @@
 # Requiere salida a Internet (python.org, github.com, pypi.org, ollama.com).
 [CmdletBinding()]
 param(
-    [string]$Requirements = (Join-Path $PSScriptRoot "02_requirements.txt"),
+    [string]$Requirements = "",
     [string]$Zip = "",
     [string]$Modelo = "qwen3:4b-instruct-2507-q4_K_M",
     [switch]$SinModelo,
     [switch]$SinGpu
 )
 $ErrorActionPreference = "Continue"
+$Raiz = if ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { (Get-Location).Path }
+if (-not $Requirements) { $Requirements = Join-Path $Raiz "02_requirements.txt" }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $Curso = "C:\curso"
 $Tmp = "$env:TEMP\instalacion"
@@ -134,7 +136,7 @@ if ($Zip -and (Test-Path $Zip)) {
 } else { Anotar "INFO" "paquete" "sin -Zip: copiar y descomprimir el zip a $Curso\paquete" }
 
 # 7b. Documentos ficticios de practica
-$traer = Join-Path $PSScriptRoot "06_traer_datos.ps1"
+$traer = Join-Path $Raiz "06_traer_datos.ps1"
 if (Test-Path $traer) { & $traer; if ($LASTEXITCODE -eq 0) { Anotar "OK" "datos de practica" "" } else { Anotar "ERROR" "datos de practica" "ver 06_traer_datos.ps1" } }
 
 # 8. GPU y modelo
@@ -149,4 +151,4 @@ if (-not $SinModelo -and (Existe "ollama")) {
 Write-Host "`n===== RESUMEN ====="
 $Resumen | Where-Object { $_ -notmatch "^\[INFO\]" } | ForEach-Object { Write-Host $_ }
 Write-Host "Registro: $Log"
-Write-Host "Siguiente paso: $venvPy $(Join-Path $PSScriptRoot '03_verificar_entorno.py')"
+Write-Host "Siguiente paso: $venvPy $(Join-Path $Raiz '03_verificar_entorno.py')"
