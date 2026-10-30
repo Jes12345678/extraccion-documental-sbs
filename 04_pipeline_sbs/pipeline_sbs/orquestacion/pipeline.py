@@ -153,3 +153,29 @@ def registrar_errores(registros: list[dict[str, Any]], cuarentena: str | Path) -
     if fallos:
         (cuarentena / "registro_errores.jsonl").write_text("\n".join(lineas) + "\n", encoding="utf-8")
     return len(fallos)
+
+
+def calcular_estadisticas(tabla: pd.DataFrame) -> pd.DataFrame:
+    """Etapa 4: resume el lote por tipo de archivo, con una fila final ``TOTAL``.
+
+    Columnas: n, ok, fallo, duplicado, requiere_ocr y pct_requiere_ocr (solo sobre los archivos ok).
+
+    Args:
+        tabla: tabla con un registro por archivo (columnas ``tipo``, ``estado`` y ``requiere_ocr``).
+
+    Returns:
+        DataFrame indexado por tipo.
+    """
+    def resumir(grupo: pd.DataFrame) -> dict[str, Any]:
+        ok = int((grupo["estado"] == "ok").sum())
+        con_ocr = int(((grupo["estado"] == "ok") & grupo["requiere_ocr"]).sum())
+        return {"n": len(grupo), "ok": ok, "fallo": int((grupo["estado"] == "fallo").sum()),
+                "duplicado": int((grupo["estado"] == "duplicado").sum()), "requiere_ocr": con_ocr,
+                "pct_requiere_ocr": round(100 * con_ocr / ok, 1) if ok else 0.0}
+
+    columnas = ["n", "ok", "fallo", "duplicado", "requiere_ocr", "pct_requiere_ocr"]
+    if tabla.empty:
+        return pd.DataFrame(columns=columnas)
+    filas = {tipo: resumir(grupo) for tipo, grupo in tabla.groupby("tipo", sort=True)}
+    filas["TOTAL"] = resumir(tabla)
+    return pd.DataFrame.from_dict(filas, orient="index")[columnas]
