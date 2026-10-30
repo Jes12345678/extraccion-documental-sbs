@@ -124,3 +124,32 @@ def normalizar_lote(registros: list[dict[str, Any]], umbral_ocr: int = 20) -> li
         fila["caracteres"] = len(texto)
         fila["requiere_ocr"] = fila["formato"] in FORMATOS_IMAGEN or (fila["formato"] == "pdf" and por_pagina < umbral_ocr)
     return registros
+
+
+def registrar_errores(registros: list[dict[str, Any]], cuarentena: str | Path) -> int:
+    """Etapa 3: copia los archivos con fallo a la cuarentena y deja un evento por cada uno.
+
+    Escribe además ``registro_errores.jsonl`` (una línea JSON por fallo) dentro de la cuarentena. Es
+    idempotente: repetir la etapa reemplaza las copias y el registro.
+
+    Args:
+        registros: salida de ``normalizar_lote``.
+        cuarentena: carpeta de cuarentena (se crea si hace falta).
+
+    Returns:
+        Cantidad de archivos con fallo.
+    """
+    cuarentena = Path(cuarentena)
+    fallos = [fila for fila in registros if fila["estado"] == "fallo"]
+    lineas = []
+    for fila in fallos:
+        try:
+            enviar_a_cuarentena(fila["ruta"], cuarentena, fila["motivo"], fila["detalle"])
+        except OSError as error:
+            registro.error("cuarentena_fallida", extra={"archivo": fila["archivo"], "detalle": str(error)})
+        registro.warning("archivo_con_error", extra={"archivo": fila["archivo"], "motivo": fila["motivo"]})
+        lineas.append(json.dumps({"archivo": fila["archivo"], "motivo": fila["motivo"], "detalle": fila["detalle"]},
+                                 ensure_ascii=False))
+    if fallos:
+        (cuarentena / "registro_errores.jsonl").write_text("\n".join(lineas) + "\n", encoding="utf-8")
+    return len(fallos)
