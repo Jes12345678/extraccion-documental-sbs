@@ -133,6 +133,10 @@ if ($Zip -and (Test-Path $Zip)) {
     Anotar "OK" "paquete" "descomprimido en $Curso\paquete"
 } else { Anotar "INFO" "paquete" "sin -Zip: copiar y descomprimir el zip a $Curso\paquete" }
 
+# 7b. Documentos ficticios de practica
+$traer = Join-Path $PSScriptRoot "06_traer_datos.ps1"
+if (Test-Path $traer) { & $traer; if ($LASTEXITCODE -eq 0) { Anotar "OK" "datos de practica" "" } else { Anotar "ERROR" "datos de practica" "ver 06_traer_datos.ps1" } }
+
 # 8. GPU y modelo
 if (Existe "nvidia-smi") { Anotar "OK" "GPU" ((& nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader) -join "; ") }
 else { Anotar "ERROR" "GPU" "nvidia-smi no está: falta el controlador NVIDIA (pedir a soporte la extensión de GPU de Azure)" }

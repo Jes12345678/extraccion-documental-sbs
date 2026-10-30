@@ -1,0 +1,16 @@
+Salidas precalculadas
+=====================
+
+Esta carpeta contendra las salidas ya calculadas (en cache) de los pasos que
+requieren GPU o modelos de lenguaje, para que las practicas en modo DEMO se
+puedan analizar y comparar sin volver a ejecutar el modelo.
+
+Estructura prevista:
+
+- ocr/   texto y cajas por documento y por motor de OCR (un JSON por documento).
+- llm/   respuestas estructuradas del modelo de lenguaje por documento y por
+         prompt (un JSON por documento).
+
+Estado: vacia. Se llenara con las ejecuciones reales en el laboratorio; hasta
+entonces no hay salidas de modelos en esta carpeta. Cada archivo llevara el
+identificador del documento (por ejemplo OFI-0001.json).
