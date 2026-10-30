@@ -1,7 +1,7 @@
 ﻿# 01_instalar_vm.ps1: prepara desde cero una VM Windows del curso (sin credenciales ni IP).
 # Uso (PowerShell como administrador, desde la carpeta clonada):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\01_instalar_vm.ps1
-#   Opciones: -Modelo qwen3:4b-instruct-2507-q4_K_M -SinModelo -SinGpu
+#   Opciones: -SinGpu (omite PyTorch GPU) -ConOllama (instala Ollama y el modelo, desde la sesion 5) -Modelo qwen3:4b-instruct-2507-q4_K_M -SinModelo
 # Se puede repetir: lo que ya esta instalado se omite. Registro en C:\curso\trabajo\instalacion.log.
 # Requiere salida a Internet (python.org, github.com, pypi.org, ollama.com).
 [CmdletBinding()]
@@ -10,6 +10,7 @@ param(
     [string]$Zip = "",
     [string]$Modelo = "qwen3:4b-instruct-2507-q4_K_M",
     [switch]$SinModelo,
+    [switch]$ConOllama,
     [switch]$SinGpu
 )
 $ErrorActionPreference = "Continue"
@@ -102,10 +103,12 @@ if (Test-Path "$tess\tessdata") {
 }
 
 # 5. Ollama
+if ($ConOllama) {
 Instalar "Ollama" { (Existe "ollama") -or (Test-Path "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe") } {
     $exe = "$Tmp\OllamaSetup.exe"
     if (Descargar "https://ollama.com/download/OllamaSetup.exe" $exe) { Start-Process $exe -ArgumentList "/SILENT" -Wait }
 }
+} else { Anotar "INFO" "Ollama" "omitido: se instala desde la sesion 5 con -ConOllama" }
 
 # 6. Entorno virtual y librerías
 $py = if (Test-Path "$env:ProgramFiles\Python312\python.exe") { "$env:ProgramFiles\Python312\python.exe" } else { "py" }
@@ -142,7 +145,7 @@ if (Test-Path $traer) { & $traer; if ($LASTEXITCODE -eq 0) { Anotar "OK" "datos 
 # 8. GPU y modelo
 if (Existe "nvidia-smi") { Anotar "OK" "GPU" ((& nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader) -join "; ") }
 else { Anotar "ERROR" "GPU" "nvidia-smi no está: falta el controlador NVIDIA (pedir a soporte la extensión de GPU de Azure)" }
-if (-not $SinModelo -and (Existe "ollama")) {
+if ($ConOllama -and -not $SinModelo -and (Existe "ollama")) {
     Anotar "INFO" "modelo" "descargando $Modelo"
     & ollama pull $Modelo 2>&1 | Select-Object -Last 1
     if ($LASTEXITCODE -eq 0) { Anotar "OK" "modelo" $Modelo } else { Anotar "ERROR" "modelo" "ollama pull falló" }

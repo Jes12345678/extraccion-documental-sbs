@@ -5,9 +5,10 @@ Este repositorio deja lista una maquina virtual Windows del curso y entrega el p
 pipeline_sbs de cada sesion. Contiene solo codigo del curso y datos ficticios.
 
 QUE CONTIENE
-  01_instalar_vm.ps1        Instala Python 3.12, Git, Java, Tesseract (espanol), Ollama,
+  01_instalar_vm.ps1        Instala Python 3.12, Git, Java, Tesseract (espanol),
                             el entorno virtual y las librerias. Se puede repetir sin riesgo:
                             lo que ya esta instalado se omite.
+                            Ollama y su modelo se instalan solo desde la sesion 5, con la opcion -ConOllama.
   02_requirements.txt       Librerias del curso con versiones fijas.
   03_verificar_entorno.py   Revisa que todo este bien. Debe terminar en 0 errores.
   04_pipeline_sbs/          El paquete pipeline_sbs con que empieza la sesion.

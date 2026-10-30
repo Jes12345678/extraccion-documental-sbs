@@ -40,6 +40,12 @@ LIBRERIAS = [  # (módulo, paquete, versión fijada o None)
     ("paddleocr", "paddleocr", "3.7.0"),
 ]
 MODELOS_OLLAMA = ["qwen3:14b", "qwen3:4b-instruct-2507-q4_K_M"]
+CON_LLM = False  # con --con-llm, la falta de Ollama y de sus modelos es un error; por defecto es un aviso (se usa desde la sesión 5)
+
+
+def nivel_llm() -> str:
+    """Nivel con que se informa lo que falta de Ollama: ERROR si se pidió --con-llm, AVISO si no."""
+    return "ERROR" if CON_LLM else "AVISO"
 RESULTADOS: list[dict[str, str]] = []
 
 # Ubicaciones habituales en Windows cuando el instalador no agrega el programa al PATH
@@ -235,19 +241,19 @@ def verificar_gpu() -> None:
 def verificar_ollama(g: str) -> None:
     """Servicio de Ollama, modelos descargados y modelos cargados (ollama ps)."""
     if buscar_programa("ollama") is None:
-        registrar("ERROR", g, "Ollama (programa)", "no instalado o no está en el PATH")
+        registrar(nivel_llm(), g, "Ollama (programa)", "no instalado o no está en el PATH (se necesita desde la sesión 5)")
     try:
         with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=5) as r:
             nombres = [m["name"] for m in json.load(r).get("models", [])]
         faltan = [m for m in MODELOS_OLLAMA if m not in nombres]
-        registrar("ERROR" if faltan else "OK", g, "Ollama (modelos)",
+        registrar(nivel_llm() if faltan else "OK", g, "Ollama (modelos)",
                   f"faltan {faltan}" if faltan else ", ".join(MODELOS_OLLAMA))
         cod, sal = ejecutar(["ollama", "ps"])
         if cod == 0:
             cargados = [linea.split()[0] for linea in sal.splitlines()[1:] if linea.strip()]
             registrar("OK", g, "Ollama (ollama ps)", ", ".join(cargados) if cargados else "sin modelos cargados ahora (se cargan al usarlos)")
     except Exception:  # noqa: BLE001
-        registrar("ERROR", g, "Ollama (servicio)", "el servicio no responde en localhost:11434")
+        registrar(nivel_llm(), g, "Ollama (servicio)", "el servicio no responde en localhost:11434 (se necesita desde la sesión 5)")
 
 
 def imprimir() -> None:
@@ -279,7 +285,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Verificación del entorno del curso")
     ap.add_argument("--json", action="store_true", help="informe en JSON en pantalla")
     ap.add_argument("--salida", metavar="RUTA", help="guarda el informe JSON en este archivo (UTF-8)")
+    ap.add_argument("--con-llm", action="store_true", help="exige Ollama y sus modelos (desde la sesión 5)")
     a = ap.parse_args()
+    global CON_LLM
+    CON_LLM = a.con_llm
     configurar_consola()
     verificar_sistema()
     verificar_carpetas()
