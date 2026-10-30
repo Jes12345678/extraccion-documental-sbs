@@ -116,3 +116,116 @@ def enviar_a_cuarentena(ruta, cuarentena, motivo, detalle=""):
     nota = {"archivo": ruta.name, "motivo": motivo, "detalle": detalle[:300]}
     destino.with_name(destino.name + ".motivo.json").write_text(json.dumps(nota, ensure_ascii=False, indent=2), encoding="utf-8")
     return destino
+
+
+@dataclass
+class ResultadoCarga:
+    """Registro de un archivo procesado (estado: ok, fallo o duplicado)."""
+
+    archivo: str
+    tipo: str
+    formato: str
+    estado: str
+    motivo: str = ""
+    detalle: str = ""
+    paginas: int = 0
+    caracteres: int = 0
+    segundos: float = 0.0
+    requiere_ocr: bool = False
+    sha256: str = ""
+    duplicado_de: str = ""
+    texto: str = field(default="", repr=False)
+
+    def como_dict(self) -> dict:
+        """Devuelve el registro sin el texto, listo para una tabla."""
+        datos = asdict(self)
+        datos.pop("texto")
+        return datos
+
+
+class CargadorDocumentos:
+    """Carga un lote de archivos mixtos sin que un archivo defectuoso detenga el proceso."""
+
+    def __init__(self, carpeta, cuarentena, umbral_ocr: int = 20) -> None:
+        self.carpeta = Path(carpeta)
+        self.cuarentena = Path(cuarentena)
+        self.umbral_ocr = umbral_ocr
+        self._vistos: dict = {}      # huella -> nombre del primer archivo con ese contenido
+
+    def cargar_uno(self, ruta) -> ResultadoCarga:
+        """Procesa un archivo y devuelve su ResultadoCarga. Nunca lanza una excepción por el contenido del archivo."""
+        ruta = Path(ruta)
+        inicio = time.perf_counter()
+        tipo = TIPO_POR_EXTENSION.get(ruta.suffix.lower(), "otro")
+        sha, formato = "", "desconocido"
+        resultado = None
+        try:
+            sha = calcular_sha256(ruta)
+            formato = detectar_formato(ruta)
+            validar_formato_y_extension(ruta, formato)
+            verificar_apertura(ruta, formato)
+            original = self._vistos.get(sha)
+            if original is not None:
+                resultado = ResultadoCarga(archivo=ruta.name, tipo=tipo, formato=formato, estado="duplicado",
+                                           motivo="duplicado", detalle=f"mismo contenido que {original}",
+                                           sha256=sha, duplicado_de=original)
+            else:
+                extraccion = extraer_texto(ruta, formato)
+                texto = normalizar_texto(extraccion.texto)
+                por_pagina = len(texto) / max(extraccion.paginas, 1)
+                resultado = ResultadoCarga(
+                    archivo=ruta.name, tipo=tipo, formato=formato, estado="ok", paginas=extraccion.paginas,
+                    caracteres=len(texto), sha256=sha, texto=texto,
+                    requiere_ocr=(formato in FORMATOS_IMAGEN or (formato == "pdf" and por_pagina < self.umbral_ocr)),
+                )
+                self._vistos[sha] = ruta.name
+        except Exception as error:  # noqa: BLE001 - un archivo malo no debe detener el lote
+            tipificado = error if isinstance(error, ErrorIngesta) else traducir_excepcion(error)
+            detalle = (tipificado.detalle or str(tipificado)).replace(str(ruta), ruta.name)
+            resultado = ResultadoCarga(archivo=ruta.name, tipo=tipo, formato=formato, estado="fallo",
+                                       motivo=tipificado.motivo, detalle=detalle, sha256=sha)
+            try:
+                enviar_a_cuarentena(ruta, self.cuarentena, tipificado.motivo, detalle)
+            except OSError:
+                pass     # si la cuarentena tampoco se puede escribir, el lote igual continúa
+        resultado.segundos = time.perf_counter() - inicio
+        return resultado
+
+    def cargar_lote(self) -> list:
+        """Procesa todos los archivos de la carpeta, en orden alfabético, y devuelve un ResultadoCarga por archivo."""
+        self._vistos = {}
+        archivos = sorted(p for p in self.carpeta.iterdir() if p.is_file() and not p.name.startswith("."))
+        return [self.cargar_uno(p) for p in archivos]
+
+
+def tabla_resultados(resultados: list) -> pd.DataFrame:
+    """Tabla con un registro por archivo (sin el texto)."""
+    return pd.DataFrame([r.como_dict() for r in resultados])
+
+
+def estadisticas(resultados: list) -> pd.DataFrame:
+    """Resumen del lote por tipo de archivo, con una fila final TOTAL.
+
+    El porcentaje que requiere OCR se calcula solo sobre los archivos ok.
+    """
+
+    def resumir(grupo: pd.DataFrame) -> dict:
+        n = len(grupo)
+        ok = int((grupo["estado"] == "ok").sum())
+        fallo = int((grupo["estado"] == "fallo").sum())
+        duplicado = int((grupo["estado"] == "duplicado").sum())
+        con_ocr = int(((grupo["estado"] == "ok") & grupo["requiere_ocr"]).sum())
+        return {
+            "n": n, "ok": ok, "fallo": fallo, "duplicado": duplicado,
+            "pct_ok": round(100 * ok / n, 1), "pct_fallo": round(100 * fallo / n, 1),
+            "pct_duplicado": round(100 * duplicado / n, 1),
+            "paginas": int(grupo["paginas"].sum()), "caracteres": int(grupo["caracteres"].sum()),
+            "segundos_total": round(float(grupo["segundos"].sum()), 6),
+            "segundos_mediana": round(float(grupo["segundos"].median()), 6),
+            "requiere_ocr": con_ocr, "pct_requiere_ocr": round(100 * con_ocr / ok, 1) if ok else 0.0,
+        }
+
+    tabla = tabla_resultados(resultados)
+    filas = {tipo: resumir(grupo) for tipo, grupo in tabla.groupby("tipo", sort=True)}
+    filas["TOTAL"] = resumir(tabla)
+    return pd.DataFrame.from_dict(filas, orient="index")
