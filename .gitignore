@@ -3,3 +3,5 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .ipynb_checkpoints/
+s0*_*/salidas_casa/*.txt
+s03_ocr/salidas_casa/*.txt

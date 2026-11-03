@@ -1,4 +1,5 @@
 ﻿# 06_traer_datos.ps1: deja los documentos ficticios de practica en C:\curso\datos.
+# Incluye el lote publico real: queda en $Destino\14_Publico_Real (la ruta que usa el codigo del curso).
 # Uso (PowerShell, desde la carpeta clonada):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\06_traer_datos.ps1
 #   Opcion con archivo comprimido (ruta local o enlace https):
@@ -17,7 +18,9 @@ $Marca = "01_Lote_S02"
 
 function Contiene([string]$carpeta) { return (Test-Path (Join-Path $carpeta $Marca)) }
 
-if ((Contiene $Destino) -and -not $Forzar) { Write-Host "[OK] datos de practica ya estan en $Destino"; exit 0 }
+function ContieneLote([string]$carpeta) { return (Test-Path (Join-Path $carpeta "14_Publico_Real\00_FICHAS.json")) }
+
+if ((Contiene $Destino) -and (ContieneLote $Destino) -and -not $Forzar) { Write-Host "[OK] datos de practica ya estan en $Destino"; exit 0 }
 
 $origen = ""
 $temporal = Join-Path $env:TEMP ("datos_curso_" + [guid]::NewGuid().ToString("N"))
