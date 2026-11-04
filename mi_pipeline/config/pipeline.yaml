@@ -1,0 +1,11 @@
+# Configuración de mi_pipeline (sin rutas absolutas ni claves secretas)
+ocr:
+  tesseract_cmd: ""      # ruta de tesseract.exe; vacío = variable TESSERACT_CMD, PATH o carpeta estándar
+  lang: spa              # idioma de Tesseract: español
+  oem: 1                 # motor: 1 = red neuronal LSTM
+  psm: 6                 # segmentación: 6 = un bloque uniforme de texto
+  psm_pagina: 3          # segmentación para páginas con varias zonas
+  dpi: 300               # resolución al pasar el PDF a imagen
+  receta: mediana        # limpieza de la imagen: crudo, gris, otsu, adaptativa o mediana
+calidad:
+  umbral_score: 0.85     # puntaje mínimo para aceptar una lectura sin revisión
