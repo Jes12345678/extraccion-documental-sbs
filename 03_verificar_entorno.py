@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
 """verificar_entorno.py — comprueba que la máquina virtual del participante está lista para el curso.
 
-Uso (PowerShell, con el entorno del curso activo):
-    python 03_verificar_entorno.py            informe legible
-    python 03_verificar_entorno.py --json     informe en JSON en pantalla
+Uso (PowerShell; se puede ejecutar desde cualquier carpeta, con ruta absoluta):
+    C:\\curso\\venv\\Scripts\\python.exe C:\\curso\\trabajo\\entorno-extraccion-documental\\03_verificar_entorno.py --sesion 3
+    python 03_verificar_entorno.py                informe legible hasta la última sesión publicada (la 4)
+    python 03_verificar_entorno.py --sesion 3     comprueba de forma ACUMULADA lo de las sesiones 1 a 3
+    python 03_verificar_entorno.py --json         informe en JSON en pantalla
     python 03_verificar_entorno.py --salida informe_entorno.json
-                                              guarda el informe JSON en ese archivo (UTF-8; crea la carpeta si falta).
-                                              Se usa en lugar de ">" de PowerShell, que guarda en otra codificación.
+                                                  guarda el informe JSON en ese archivo (UTF-8; crea la carpeta si falta).
+    python 03_verificar_entorno.py --curso prueba\\curso   usa otra carpeta del curso (pruebas; por omisión C:\\curso)
+
+Las librerías y sus versiones se leen de 02_requirements.txt (junto a este archivo): las secciones «# --- Sesión N» dicen
+qué necesita cada sesión. Los programas, modelos y variables de entorno de cada sesión están en este archivo.
 
 Niveles:  OK = listo · AVISO = el curso funciona pero más lento o con respaldo · ERROR = requiere corrección.
 Código de salida: 0 si no hay errores, 1 si los hay.
@@ -21,6 +26,7 @@ import importlib.metadata as md
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -28,25 +34,30 @@ import urllib.request
 from pathlib import Path
 
 ES_WINDOWS = os.name == "nt"
+ULTIMA_SESION = 3          # última sesión publicada: se actualiza al publicar la siguiente
+ARCHIVO_REQUIREMENTS = Path(__file__).resolve().with_name("02_requirements.txt")
 
-LIBRERIAS = [  # (módulo, paquete, versión fijada o None)
-    ("pypdf", "pypdf", "6.19.0"), ("pymupdf", "pymupdf", "1.28.2"), ("pdfplumber", "pdfplumber", "0.11.10"),
-    ("docx", "python-docx", "1.2.0"), ("bs4", "beautifulsoup4", "4.15.0"), ("tabula", "tabula-py", "2.10.0"),
-    ("camelot", "camelot-py", "2.0.0"), ("pytesseract", "pytesseract", "0.3.13"), ("PIL", "pillow", "12.3.0"),
-    ("cv2", "opencv-python-headless", "4.10.0.84"), ("numpy", "numpy", "2.3.5"), ("pandas", "pandas", "3.0.6"),
-    ("pyarrow", "pyarrow", "26.0.0"), ("duckdb", "duckdb", "1.5.6"), ("pydantic", "pydantic", "2.14.1"),
-    ("yaml", "PyYAML", "6.0.2"), ("spacy", "spacy", "3.8.16"), ("transformers", "transformers", "5.19.0"),
-    ("ollama", "ollama", "0.6.3"), ("openai", "openai", "3.31.0"), ("pytest", "pytest", "9.1.1"),
-    ("paddleocr", "paddleocr", "3.7.0"),
-]
+# Módulo que se importa cuando no coincide con el nombre del paquete
+MODULOS = {
+    "python-docx": "docx", "beautifulsoup4": "bs4", "tabula-py": "tabula", "camelot-py": "camelot", "pillow": "PIL",
+    "opencv-python-headless": "cv2", "opencv-contrib-python": "cv2", "pyyaml": "yaml", "scikit-learn": "sklearn",
+    "protobuf": "google.protobuf", "paddlepaddle": "paddle",
+}
+# Paquetes que se comprueban solo por su versión (importarlos tarda mucho o duplica a otro)
+SOLO_VERSION = {"opencv-contrib-python", "paddlepaddle"}
+
+MODELOS_HF = ["Davlan/xlm-roberta-base-ner-hrl", "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli"]
 MODELOS_OLLAMA = ["qwen3:14b", "qwen3:4b-instruct-2507-q4_K_M"]
 CON_LLM = False  # con --con-llm, la falta de Ollama y de sus modelos es un error; por defecto es un aviso (se usa desde la sesión 5)
+RESULTADOS: list[dict[str, str]] = []
+SESION_ACTUAL = 0
+CARPETA_CURSO: Path | None = None
 
 
 def nivel_llm() -> str:
     """Nivel con que se informa lo que falta de Ollama: ERROR si se pidió --con-llm, AVISO si no."""
     return "ERROR" if CON_LLM else "AVISO"
-RESULTADOS: list[dict[str, str]] = []
+
 
 # Ubicaciones habituales en Windows cuando el instalador no agrega el programa al PATH
 UNIDAD = os.environ.get("SystemDrive", "C:") + os.sep  # unidad del sistema, normalmente C:
@@ -54,14 +65,15 @@ ARCHIVOS = Path(UNIDAD) / "Program Files"
 RUTAS_WINDOWS = {
     "tesseract": [ARCHIVOS / "Tesseract-OCR" / "tesseract.exe"],
     "git": [ARCHIVOS / "Git" / "cmd" / "git.exe"],
+    "java": [ARCHIVOS / "Eclipse Adoptium" / "jre-17" / "bin" / "java.exe"],
     "ollama": [Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"],
     "nvidia-smi": [ARCHIVOS / "NVIDIA Corporation" / "NVSMI" / "nvidia-smi.exe"],
 }
 
 
 def registrar(nivel: str, grupo: str, nombre: str, detalle: str = "") -> None:
-    """Anota el resultado de una comprobación."""
-    RESULTADOS.append({"nivel": nivel, "grupo": grupo, "nombre": nombre, "detalle": detalle})
+    """Anota el resultado de una comprobación, con la sesión que la necesita (0 = sistema)."""
+    RESULTADOS.append({"nivel": nivel, "grupo": grupo, "nombre": nombre, "detalle": detalle, "sesion": SESION_ACTUAL})
 
 
 def buscar_programa(nombre: str) -> str | None:
@@ -69,10 +81,21 @@ def buscar_programa(nombre: str) -> str | None:
     ruta = shutil.which(nombre)
     if ruta:
         return ruta
+    # Variables de entorno habituales cuando el programa no está en el PATH
+    if nombre == "tesseract" and os.environ.get("TESSERACT_CMD") and Path(os.environ["TESSERACT_CMD"]).is_file():
+        return os.environ["TESSERACT_CMD"]
+    if nombre == "java" and os.environ.get("JAVA_HOME"):
+        candidata = Path(os.environ["JAVA_HOME"]) / "bin" / ("java.exe" if ES_WINDOWS else "java")
+        if candidata.is_file():
+            return str(candidata)
     if ES_WINDOWS:
         for candidata in RUTAS_WINDOWS.get(nombre, []):
             if candidata.is_file():
                 return str(candidata)
+        if nombre == "java":
+            for base in (ARCHIVOS / "Eclipse Adoptium", ARCHIVOS / "Java"):
+                for candidata in sorted(base.glob("*/bin/java.exe")) if base.is_dir() else []:
+                    return str(candidata)
     return None
 
 
@@ -92,8 +115,31 @@ def ejecutar(cmd: list[str], tiempo: int = 15) -> tuple[int | None, str]:
 
 
 def carpeta_curso() -> Path:
-    """Raíz de las carpetas del curso: la carpeta «curso» de la unidad del sistema (C:)."""
-    return Path(UNIDAD) / "curso"
+    """Raíz de las carpetas del curso: ``--curso``, la variable SBS_CURSO o la carpeta «curso» de la unidad del sistema (C:)."""
+    if CARPETA_CURSO is not None:
+        return CARPETA_CURSO
+    return Path(os.environ.get("SBS_CURSO") or (UNIDAD + "curso"))
+
+
+def leer_requirements() -> dict[int, list[tuple[str, str | None]]]:
+    """Lee 02_requirements.txt: ``{sesión: [(paquete, versión fijada o None)]}`` según las secciones «# --- Sesión N»."""
+    secciones: dict[int, list[tuple[str, str | None]]] = {}
+    if not ARCHIVO_REQUIREMENTS.is_file():
+        return secciones
+    actual: int | None = None
+    for linea in ARCHIVO_REQUIREMENTS.read_text(encoding="utf-8").splitlines():
+        cabecera = re.match(r"#\s*---\s*(.*)", linea)
+        if cabecera:
+            n = re.match(r"Sesi[oó]n\s+(\d+)", cabecera.group(1))
+            actual = int(n.group(1)) if n else None
+            continue
+        limpia = linea.split("#")[0].strip()
+        if actual is None or not limpia:
+            continue
+        m = re.match(r"([A-Za-z0-9_.\-]+)\s*(?:==\s*([\w.+]+))?$", limpia)
+        if m:
+            secciones.setdefault(actual, []).append((m.group(1), m.group(2)))
+    return secciones
 
 
 def memoria_gb() -> float | None:
@@ -126,13 +172,19 @@ def verificar_sistema() -> None:
     v = sys.version_info
     registrar("OK" if (v.major, v.minor) == (3, 12) else "AVISO", g, "Python",
               f"{v.major}.{v.minor}.{v.micro}" + ("" if (v.major, v.minor) == (3, 12) else " (se espera 3.12)"))
+    venv = carpeta_curso() / "venv"
+    python_venv = venv / ("Scripts/python.exe" if ES_WINDOWS else "bin/python")
     en_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
-    activar = str(carpeta_curso() / "venv" / "Scripts" / "Activate.ps1")
-    registrar("OK" if en_venv else "AVISO", g, "Entorno virtual",
-              f"activo ({sys.prefix})" if en_venv else f"no activo: falta activar el entorno del curso ({activar})")
-    raiz = UNIDAD
+    if not python_venv.is_file():
+        registrar("ERROR", g, "Entorno virtual",
+                  f"falta {venv}: ejecute 01_instalar_vm.ps1 como administrador (PowerShell) y vuelva a ejecutar este verificador con {python_venv}")
+    elif not en_venv:
+        registrar("AVISO", g, "Entorno virtual",
+                  f"este verificador corre con otro Python ({sys.executable}); ejecute: {python_venv} {Path(__file__).resolve()}")
+    else:
+        registrar("OK", g, "Entorno virtual", f"activo ({sys.prefix})")
     try:
-        libre = shutil.disk_usage(raiz).free / 2**30
+        libre = shutil.disk_usage(UNIDAD).free / 2**30
         registrar("OK" if libre >= 40 else "AVISO", g, "Disco libre", f"{libre:.0f} GB (mínimo 40 GB)")
     except OSError:
         registrar("AVISO", g, "Disco libre", "no se pudo leer")
@@ -163,15 +215,23 @@ def verificar_carpetas() -> None:
             registrar("ERROR", g, "Escritura en la carpeta de trabajo", f"no se puede escribir ({type(e).__name__})")
 
 
-def verificar_librerias() -> None:
-    """Librerías de Python con su versión fijada."""
+def verificar_librerias(sesion: int, requisitos: dict[int, list[tuple[str, str | None]]]) -> None:
+    """Librerías de Python de la sesión con su versión fijada (lo que dice 02_requirements.txt)."""
     g = "Librerías de Python"
-    for modulo, paquete, version in LIBRERIAS:
+    if not requisitos:
+        registrar("ERROR", g, "02_requirements.txt", f"no se encuentra junto al verificador ({ARCHIVO_REQUIREMENTS})")
+        return
+    for paquete, version in requisitos.get(sesion, []):
+        modulo = MODULOS.get(paquete.lower(), paquete.replace("-", "_"))
         try:
-            importlib.import_module(modulo)
             instalada = md.version(paquete)
+            if paquete.lower() not in SOLO_VERSION:
+                importlib.import_module(modulo)
+        except md.PackageNotFoundError:
+            registrar("ERROR", g, paquete, "no está instalado")
+            continue
         except Exception as e:  # noqa: BLE001
-            registrar("ERROR", g, paquete, f"no se pudo importar ({type(e).__name__})")
+            registrar("ERROR", g, paquete, f"instalado ({instalada}) pero no se pudo importar ({type(e).__name__})")
             continue
         if version and instalada != version:
             registrar("AVISO", g, paquete, f"versión {instalada} (el curso usa {version})")
@@ -179,23 +239,32 @@ def verificar_librerias() -> None:
             registrar("OK", g, paquete, instalada)
 
 
-def verificar_programas() -> None:
-    """Programas externos: Tesseract, Java, Docker, Git."""
+def verificar_tesseract() -> None:
+    """Tesseract con los idiomas español y orientación (sesión 1, usado a fondo en la 3)."""
     g = "Programas del sistema"
     cod, sal = ejecutar(["tesseract", "--list-langs"])
     if cod is None:
-        registrar("ERROR", g, "Tesseract", sal)
-    else:
-        langs = [x.strip() for x in sal.splitlines()]
-        faltan = [x for x in ("spa", "osd") if x not in langs]
-        registrar("ERROR" if faltan else "OK", g, "Tesseract (idiomas)",
-                  f"faltan {faltan}" if faltan else "spa y osd disponibles")
+        registrar("ERROR", g, "Tesseract", sal + " (ejecute 01_instalar_vm.ps1 como administrador)")
+        return
+    langs = [x.strip() for x in sal.splitlines()]
+    faltan = [x for x in ("spa", "osd") if x not in langs]
+    cod_v, ver = ejecutar(["tesseract", "--version"])
+    version = ver.splitlines()[0] if cod_v == 0 and ver else "versión desconocida"
+    registrar("ERROR" if faltan else "OK", g, "Tesseract (idiomas)",
+              f"faltan {faltan}" if faltan else f"spa y osd disponibles ({version})")
+
+
+def verificar_git() -> None:
+    g = "Programas del sistema"
+    cod, sal = ejecutar(["git", "--version"])
+    registrar("OK" if cod == 0 else "AVISO", g, "Git", sal if cod == 0 else "no instalado: se necesita para guardar el avance (sesión 0)")
+
+
+def verificar_java() -> None:
+    g = "Programas del sistema"
     cod, sal = ejecutar(["java", "-version"])
     registrar("OK" if cod == 0 else "ERROR", g, "Java (tabula-py)",
-              sal.splitlines()[0] if cod == 0 and sal else "no instalado o no está en el PATH")
-    cod, sal = ejecutar(["git", "--version"])
-    registrar("OK" if cod == 0 else "AVISO", g, "Git", sal if cod == 0 else "no instalado: se necesita desde la sesión 0")
-    verificar_docker()
+              sal.splitlines()[0] if cod == 0 and sal else "no instalado o no está en el PATH (lo instala 01_instalar_vm.ps1)")
 
 
 def verificar_docker() -> None:
@@ -213,12 +282,17 @@ def verificar_docker() -> None:
         registrar("AVISO", g, "Docker", f"instalado pero no arranca. {aviso_win}")
 
 
-def verificar_gpu() -> None:
-    """GPU, PyTorch, modelo de spaCy y Ollama."""
+def carpeta_hf() -> Path:
+    """Caché de Hugging Face: HF_HOME, o la carpeta de modelos del curso."""
+    return Path(os.environ["HF_HOME"]) if os.environ.get("HF_HOME") else carpeta_curso() / "modelos" / "hf"
+
+
+def verificar_modelos_sesion4() -> None:
+    """GPU, PyTorch, modelo de spaCy, modelos de Hugging Face y variables de entorno (sesión 4)."""
     g = "GPU y modelos"
     cod, sal = ejecutar(["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"])
     if cod != 0:
-        registrar("AVISO", g, "GPU NVIDIA", "no detectada: el curso funciona en CPU (más lento) y con respaldos")
+        registrar("AVISO", g, "GPU NVIDIA", "no detectada: el curso funciona en CPU (más lento) y con las salidas guardadas")
     else:
         nombre = sal.splitlines()[0]
         registrar("OK" if "T4" in nombre else "AVISO", g, "GPU NVIDIA (nombre, VRAM, controlador)",
@@ -226,20 +300,34 @@ def verificar_gpu() -> None:
     try:
         import torch  # noqa: WPS433
         ok = bool(torch.cuda.is_available())
-        registrar("OK" if ok else "AVISO", g, "PyTorch con CUDA", "CUDA disponible" if ok else "se usa CPU")
+        arq = ", ".join(torch.cuda.get_arch_list()) if ok else ""
+        registrar("OK" if ok else "AVISO", g, f"PyTorch {torch.__version__} con CUDA",
+                  f"CUDA disponible (arquitecturas: {arq})" if ok else "sin CUDA: se usa la CPU y las salidas guardadas")
     except Exception:  # noqa: BLE001
-        registrar("AVISO", g, "PyTorch", "no instalado (necesario desde la sesión 4)")
+        registrar("ERROR", g, "PyTorch", "no se pudo importar (lo instala 01_instalar_vm.ps1)")
     try:
         import spacy
         spacy.load("es_core_news_md")
-        registrar("OK", g, "Modelo spaCy en español", "es_core_news_md")
+        registrar("OK", g, "Modelo spaCy en español", f"es_core_news_md {md.version('es_core_news_md')}")
     except Exception:  # noqa: BLE001
-        registrar("ERROR", g, "Modelo spaCy en español", "no se pudo cargar es_core_news_md")
-    verificar_ollama(g)
+        registrar("ERROR", g, "Modelo spaCy en español", "no se pudo cargar es_core_news_md (lo instala 01_instalar_vm.ps1)")
+    hf = carpeta_hf()
+    for modelo in MODELOS_HF:
+        carpeta = hf / "hub" / ("models--" + modelo.replace("/", "--")) / "snapshots"
+        listo = carpeta.is_dir() and any(carpeta.glob("*/config.json"))
+        registrar("OK" if listo else "AVISO", g, f"Modelo de Hugging Face {modelo}",
+                  str(carpeta.parent) if listo else f"no está en {hf}: 01_instalar_vm.ps1 lo descarga (sin él se usan las salidas guardadas)")
+    hf_home = os.environ.get("HF_HOME")
+    registrar("OK" if hf_home else "AVISO", "Variables de entorno", "HF_HOME",
+              hf_home if hf_home else f"sin definir: se usa {hf} (01_instalar_vm.ps1 la define; abrir una consola nueva)")
+    simb = os.environ.get("HF_HUB_DISABLE_SYMLINKS_WARNING")
+    registrar("OK" if simb == "1" else "AVISO", "Variables de entorno", "HF_HUB_DISABLE_SYMLINKS_WARNING",
+              "1" if simb == "1" else "sin definir: Hugging Face avisa por los enlaces simbólicos (solo es un aviso)")
 
 
-def verificar_ollama(g: str) -> None:
+def verificar_ollama() -> None:
     """Servicio de Ollama, modelos descargados y modelos cargados (ollama ps)."""
+    g = "GPU y modelos"
     if buscar_programa("ollama") is None:
         registrar(nivel_llm(), g, "Ollama (programa)", "no instalado o no está en el PATH (se necesita desde la sesión 5)")
     try:
@@ -256,15 +344,30 @@ def verificar_ollama(g: str) -> None:
         registrar(nivel_llm(), g, "Ollama (servicio)", "el servicio no responde en localhost:11434 (se necesita desde la sesión 5)")
 
 
-def imprimir() -> None:
-    """Informe legible en consola."""
+def imprimir(hasta: int) -> None:
+    """Informe legible en consola, con un resumen por sesión."""
     marcas = {"OK": "[ OK  ]", "AVISO": "[AVISO]", "ERROR": "[ERROR]"}
     grupo = None
     for r in RESULTADOS:
         if r["grupo"] != grupo:
             grupo = r["grupo"]
             print(f"\n== {grupo}")
-        print(f"  {marcas[r['nivel']]} {r['nombre']}: {r['detalle']}")
+        etiqueta = f" (S{r['sesion']})" if r["sesion"] else ""
+        print(f"  {marcas[r['nivel']]} {r['nombre']}{etiqueta}: {r['detalle']}")
+    print("\n== Por sesión (acumulado)")
+    for s in range(0, hasta + 1):
+        propios = [r for r in RESULTADOS if r["sesion"] == s]
+        if not propios:
+            continue
+        errores = [r["nombre"] for r in propios if r["nivel"] == "ERROR"]
+        avisos = [r["nombre"] for r in propios if r["nivel"] == "AVISO"]
+        nombre = "Sistema" if s == 0 else f"Sesión {s}"
+        estado = "listo" if not errores and not avisos else ""
+        if errores:
+            estado = "FALTA: " + ", ".join(errores)
+        if avisos:
+            estado += ("; " if estado else "") + "avisos: " + ", ".join(avisos)
+        print(f"  {nombre}: {estado}")
     n = {k: sum(1 for r in RESULTADOS if r["nivel"] == k) for k in marcas}
     print(f"\nResumen: {n['OK']} OK · {n['AVISO']} avisos · {n['ERROR']} errores")
     if n["ERROR"]:
@@ -281,30 +384,48 @@ def configurar_consola() -> None:
 
 
 def main() -> int:
-    """Punto de entrada: ejecuta todas las comprobaciones y devuelve el código de salida."""
+    """Punto de entrada: ejecuta las comprobaciones acumuladas hasta la sesión pedida y devuelve el código de salida."""
     ap = argparse.ArgumentParser(description="Verificación del entorno del curso")
+    ap.add_argument("--sesion", type=int, default=ULTIMA_SESION, help=f"verifica de forma acumulada las sesiones 1 a N (por omisión, la {ULTIMA_SESION})")
     ap.add_argument("--json", action="store_true", help="informe en JSON en pantalla")
     ap.add_argument("--salida", metavar="RUTA", help="guarda el informe JSON en este archivo (UTF-8)")
     ap.add_argument("--con-llm", action="store_true", help="exige Ollama y sus modelos (desde la sesión 5)")
+    ap.add_argument("--curso", metavar="CARPETA", help="carpeta del curso (por omisión C:\\curso)")
     a = ap.parse_args()
-    global CON_LLM
+    global CON_LLM, CARPETA_CURSO, SESION_ACTUAL
     CON_LLM = a.con_llm
+    if a.curso:
+        CARPETA_CURSO = Path(a.curso).resolve()
+    hasta = max(1, min(a.sesion, 9))
     configurar_consola()
+    requisitos = leer_requirements()
+    SESION_ACTUAL = 0
     verificar_sistema()
     verificar_carpetas()
-    verificar_librerias()
-    verificar_programas()
-    verificar_gpu()
+    for s in range(1, hasta + 1):
+        SESION_ACTUAL = s
+        verificar_librerias(s, requisitos)
+        if s == 1:
+            verificar_tesseract()
+            verificar_git()
+        elif s == 2:
+            verificar_java()
+        elif s == 4:
+            verificar_modelos_sesion4()
+        elif s == 5:
+            verificar_ollama()
+        elif s == 7:
+            verificar_docker()
     if a.salida:
         destino = Path(a.salida).expanduser()
         destino.parent.mkdir(parents=True, exist_ok=True)
         destino.write_text(json.dumps(RESULTADOS, ensure_ascii=False, indent=1), encoding="utf-8")  # UTF-8 sin BOM
-        imprimir()
+        imprimir(hasta)
         print(f"Informe JSON guardado en: {destino}")
     elif a.json:
         print(json.dumps(RESULTADOS, ensure_ascii=False, indent=1))
     else:
-        imprimir()
+        imprimir(hasta)
     return 1 if any(r["nivel"] == "ERROR" for r in RESULTADOS) else 0
 
 
