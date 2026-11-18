@@ -4,7 +4,8 @@
 # La sesion 6 no usa modelos de lenguaje: no instala ni comprueba Ollama; trae la lista de la bandeja a mi_pipeline\config.
 # La sesion 8 (proyecto final) tampoco usa modelos de lenguaje ni contenedores: repone de S03 a S06 y crea trabajo-s08 desde trabajo-s06
 # (la sesion 7 se dicta despues, el 20/11/2026, y su rama no existe todavia).
-# Uso (PowerShell o terminal de JupyterLab; el instalador pide PowerShell como administrador la primera vez):
+# Uso (PowerShell o terminal de JupyterLab; si falta instalar algo y la ventana no es de administrador, el archivo pide el permiso
+# con la ventana de Windows y corre el instalador en otra ventana; con el entorno completo no pide nada):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\07_preparar_sesion.ps1 -Sesion 6
 # Se puede repetir sin riesgo: lo que ya esta hecho se comprueba y se omite. Nunca se borra trabajo propio.
 #   -SinInstalar   omite el instalador y solo ejecuta el verificador del entorno
@@ -152,10 +153,48 @@ if ($SinInstalar) { Write-Host "Instalador omitido (-SinInstalar)." }
 else {
     $opciones = @("-Sesion", "$Sesion", "-Rama", "sesion-0$Sesion")
     if ($ConOllama) { $opciones += "-ConOllama" }
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Clon "01_instalar_vm.ps1") @opciones
+    $instalador = Join-Path $Clon "01_instalar_vm.ps1"
+    $esAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if ($esAdmin) {
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $instalador @opciones
+    } else {
+        # ventana sin administrador: si el entorno ya esta completo no se pide nada; si falta algo, el propio archivo pide el permiso
+        $pyVenv = Join-Path $Venv "Scripts\python.exe"
+        $completo = $false
+        if (Test-Path $pyVenv) {
+            & $pyVenv (Join-Path $Clon "03_verificar_entorno.py") --sesion $Sesion *> $null
+            $completo = ($LASTEXITCODE -eq 0)
+        }
+        if ($completo) {
+            Write-Host "[OK] El entorno ya está completo: no hace falta el permiso de administrador."
+        } else {
+            Write-Host "Falta instalar programas del entorno y esta ventana no es de administrador." -ForegroundColor Yellow
+            Write-Host "Windows muestra ahora una ventana de permiso: se responde «Sí». El instalador corre en otra ventana, que se cierra sola al terminar (tarda varios minutos); esta ventana espera."
+            $registro = Join-Path $env:TEMP "instalar_vm_s0$Sesion.log"
+            Remove-Item $registro -ErrorAction SilentlyContinue
+            $orden = "& '$instalador' $($opciones -join ' ') *>&1 | Tee-Object -FilePath '$registro'"
+            try {
+                Start-Process powershell -Verb RunAs -Wait -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "`"$orden`"" -ErrorAction Stop
+                if (Test-Path $registro) {
+                    Write-Host "Últimas líneas del instalador (la salida completa está en $registro):"
+                    Get-Content $registro -Tail 15 | Write-Host
+                }
+            } catch {
+                Write-Host "[ERROR] No se obtuvo el permiso de administrador (se respondió «No» o la cuenta no lo tiene). Se repite el archivo y se responde «Sí»; si Windows pide una contraseña que no se conoce, se avisa al docente." -ForegroundColor Red
+            }
+        }
+    }
+    # lo que el instalador agrega (Tesseract, Java y Python en el Path; HF_HOME y las variables de Ollama) no llega solo a esta ventana: se vuelve a leer
+    $rutas = @(([Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User") + ";" + $env:Path) -split ";" | Where-Object { $_ }) | Select-Object -Unique
+    $env:Path = $rutas -join ";"
+    foreach ($variable in "HF_HOME", "HF_HUB_DISABLE_SYMLINKS_WARNING", "OLLAMA_MODELS", "OLLAMA_NO_CLOUD") {
+        $valor = [Environment]::GetEnvironmentVariable($variable, "User")
+        if (-not $valor) { $valor = [Environment]::GetEnvironmentVariable($variable, "Machine") }
+        if ($valor) { Set-Item "Env:$variable" $valor }
+    }
 }
 $python = Join-Path $Venv "Scripts\python.exe"
-if (-not (Test-Path $python)) { Write-Host "[ERROR] Falta el entorno en $Venv. Se repite el archivo en PowerShell abierto como administrador, sin -SinInstalar." -ForegroundColor Red; exit 1 }
+if (-not (Test-Path $python)) { Write-Host "[ERROR] Falta el entorno en ${Venv}: el instalador no terminó. Se repite el archivo, sin -SinInstalar, y se acepta el permiso de administrador cuando Windows lo pida." -ForegroundColor Red; exit 1 }
 & $python (Join-Path $Clon "03_verificar_entorno.py") --sesion $Sesion
 $codigo = $LASTEXITCODE
 if ($codigo -ne 0) { Write-Host "[AVISO] El verificador informó errores (código $codigo). Se avisa al docente con la salida de arriba." -ForegroundColor Yellow }
