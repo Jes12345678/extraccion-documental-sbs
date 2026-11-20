@@ -1,1 +1,1 @@
-"""Calidad y validación: reglas de negocio, dígito verificador del RUC y métricas de calidad de la extracción (desde S03)."""
+"""Calidad y validación: métricas (CER e IoU), puntaje con validadores de RUC, fecha y monto (S03) y F1 por campo (S04)."""

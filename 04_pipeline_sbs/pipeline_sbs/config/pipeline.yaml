@@ -3,6 +3,18 @@
 
 ocr:
   idioma: spa            # código de idioma de Tesseract (datos "spa")
+  tesseract_cmd: ""      # S03: ruta de tesseract.exe; vacío = variable TESSERACT_CMD, PATH o carpeta estándar de Windows
+  lang: spa              # S03: idioma que usa pytesseract
+  oem: 1                 # S03: motor de Tesseract (1 = red neuronal LSTM)
+  psm: 6                 # S03: modo de segmentación; 6 = un bloque uniforme de texto
+  psm_pagina: 3          # S03: modo para páginas con varias columnas o zonas (se compara con psm en el LAB)
+  dpi: 300               # S03: resolución al pasar el PDF a imagen
+  receta: mediana         # S03: receta de limpieza de la imagen (crudo | gris | otsu | adaptativa | mediana)
+  paddle:                # PaddleOCR 3.x en CPU (S02 lo prueba con una imagen; S03 lo amplía)
+    idioma: es
+    modelo_deteccion: PP-OCRv5_mobile_det          # modelos ligeros: ~1 s por imagen frente a ~14 s con los de serie
+    modelo_reconocimiento: latin_PP-OCRv5_mobile_rec
+    enable_mkldnn: false                           # necesario en CPU con paddlepaddle 3.3.1 (si no, falla en la primera predicción)
 
 ingesta:
   extensiones:           # extensiones que el pipeline acepta en una carpeta de entrada
@@ -14,9 +26,41 @@ ingesta:
     - ".eml"
     - ".docx"
     - ".html"
+  carpeta_cuarentena: cuarentena            # S02: aquí se copian los archivos que fallan (junto con su motivo)
+  umbral_ocr_caracteres_por_pagina: 20      # S02: menos caracteres por página => el PDF requiere OCR (se calibra con el corpus)
+  hash: sha256                              # S02: huella del contenido para detectar duplicados
+
+calidad:
+  umbral_score: 0.85     # S03: puntaje mínimo para aceptar una lectura sin revisión humana
+  umbral_f1: 0.80        # S04: F1 mínimo por campo (provisional; se fija con las mediciones de la VM)
+
+extraccion:              # S04: texto, reglas, NER y adjuntos de los correos
+  modelo_spacy: es_core_news_md        # modelo de spaCy (respaldo: es_core_news_sm)
+  modelo_spacy_respaldo: es_core_news_sm
+  modelo_ner: Davlan/xlm-roberta-base-ner-hrl   # NER de Transformers (etiquetas PER, ORG, LOC y DATE)
+  dispositivo: auto      # auto | cpu | cuda (auto usa la GPU si existe)
+  receta_adjunto: crudo  # limpieza de la imagen del adjunto (la receta mediana borra el texto pequeño)
+  enderezar_adjunto: false
+  psm_adjunto: 3         # segmentación del OCR del adjunto: 3 = página con varias zonas (psm_pagina de S03)
+  carpeta_lote_real: curso/datos/14_Publico_Real   # lote público real (solo lectura), relativo a la unidad del sistema
+
+clasificacion:           # S04: motivo del reclamo
+  modelo_zero_shot: MoritzLaurer/mDeBERTa-v3-base-mnli-xnli
+  plantilla_hipotesis: "Este reclamo trata de {}."
+  etiquetas_motivo:
+    - cobro indebido
+    - consumo no reconocido
+    - demora en entrega
+    - cargo duplicado
+    - cuenta cerrada
+    - tasa distinta
+  semilla: 2026
+  pliegues: 5
+  umbral_confianza: 0.30 # probabilidad mínima del motivo para no pasar a revisión (validación cruzada: con 0,30 pasan 45 de 60 y los 45 aciertan)
 
 llm:
   backend: ollama_local  # reservado: se usa desde S05 (ollama_local | servidor_compartido | api_nube)
 
 logging:
   nivel: INFO            # DEBUG | INFO | WARNING | ERROR
+  formato: json          # S02: una línea JSON por evento (simple | json)
