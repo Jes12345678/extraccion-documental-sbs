@@ -11,7 +11,6 @@
 #     fallan al importarse («DLL load failed», «Error loading c10.dll»); lo instala 01_instalar_vm.ps1 como administrador.
 #   - tabula-py necesita Java (JRE 17) en el PATH; lo instala 01_instalar_vm.ps1.
 #   - pytesseract necesita el programa Tesseract OCR con los idiomas spa y osd; lo instala 01_instalar_vm.ps1.
-#   - docker es solo el cliente de Python; Docker Desktop requiere WSL2 o Hyper-V y puede no estar disponible en la VM.
 #   - ollama es solo el cliente de Python: el programa Ollama para Windows (0.15.5 o posterior) y sus modelos se instalan aparte.
 
 # --- Sesión 1: fundamentos y primer pipeline
@@ -57,8 +56,19 @@ accelerate==1.15.0
 ollama==0.6.3           # cliente de la API local de Ollama (localhost:11434)
 openai==3.31.0          # cliente compatible con OpenAI (backend configurable)
 
-# --- Sesión 7: contenedores
-docker==7.2.0           # cliente; Docker Desktop puede no estar disponible
+# --- Sesión 6: pipelines de extremo a extremo
+# No agrega paquetes: usa duckdb, pandas y PyYAML (sesión 1), pyarrow y pydantic (sesión 2) y pytesseract con Tesseract (sesiones 1 y 3).
+# No usa ningún modelo de lenguaje ni el programa Ollama: no llama a Ollama; el cliente de S05 se importa sin usarse.
+# El cuaderno y mi_pipeline de la sesión 6 no importan psutil, jinja2 ni tenacity.
+
+# --- Sesión 7: automatización, despliegue y monitoreo
+# No agrega paquetes: usa setuptools y pip (rueda instalable con pip wheel y entorno limpio con venv), DuckDB y PyYAML (sesión 1) y pytest.
+# El participante no usa contenedores, WSL, Ollama ni modelos de lenguaje: se retiró el cliente docker (sin motor en la VM no sirve).
+# La demostración con Docker Desktop es del docente, en su máquina.
+
+# --- Sesión 8: proyecto final, implementación guiada
+# No agrega paquetes: usa lo de las sesiones 1 a 6 (PyYAML, pytest, pymupdf, python-docx, spaCy, pytesseract con Tesseract) y Git.
+# No usa modelos de lenguaje ni contenedores: no necesita Ollama ni Docker.
 
 # --- Se instalan aparte (índice propio; 01_instalar_vm.ps1 lo hace):
 #   PyTorch con GPU:   pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cu132

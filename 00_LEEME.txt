@@ -28,7 +28,14 @@ QUE CONTIENE
                             sesiones anteriores o sus pruebas fallan, respalda lo propio y repone solo eso
                             desde 05_Laboratorios\referencia_mi_pipeline_sNN (avisos [OK] o [REPUESTO]).
                             05_Laboratorios\pruebas_sNN y datos_sNN traen las pruebas de cada paso y los
-                            datos que la guia indica copiar con Copy-Item (S05: ejemplos del prompt).
+                            datos que la guia indica copiar con Copy-Item (S05: ejemplos del prompt; S06: lista de la bandeja).
+                            La sesion 6 no usa Ollama ni modelos de lenguaje: su preparacion no los instala.
+                            Sesion 7: 05_Laboratorios\datos_s07 trae el reto y la bandeja del caso (zip) y
+                            05_Laboratorios\s07_contenedor, la receta de la imagen (Dockerfile) que se lee en clase;
+                            el participante no instala Docker ni usa contenedores.
+                            Sesion 9: 05_Laboratorios\datos_s09 trae los insumos de cada flujo (un zip por flujo, A a D, con
+                            20 documentos y sus respuestas correctas) y 05_Laboratorios\s09 el rescate de cada funcion
+                            (rescate_s09.py) y la medida de exactitud del equipo (exactitud_equipo.py y su prueba).
 
 DOS REPOSITORIOS, DOS USOS
   Este repositorio (el del docente, publico) sirve para TRAER los programas a la VM: solo se

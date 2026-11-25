@@ -3,8 +3,8 @@
 # ARRANQUE SIN GIT (PowerShell como administrador; pegar las cuatro lineas):
 #   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 #   New-Item -ItemType Directory -Force C:\curso\trabajo | Out-Null
-#   Invoke-WebRequest "https://raw.githubusercontent.com/jonatanfigueroagil-creator/entorno-extraccion-documental/sesion-05/01_instalar_vm.ps1" -OutFile C:\curso\trabajo\01_instalar_vm.ps1
-#   powershell -NoProfile -ExecutionPolicy Bypass -File C:\curso\trabajo\01_instalar_vm.ps1 -Rama sesion-05
+#   Invoke-WebRequest "https://raw.githubusercontent.com/jonatanfigueroagil-creator/entorno-extraccion-documental/sesion-09/01_instalar_vm.ps1" -OutFile C:\curso\trabajo\01_instalar_vm.ps1
+#   powershell -NoProfile -ExecutionPolicy Bypass -File C:\curso\trabajo\01_instalar_vm.ps1 -Rama sesion-09
 #
 # Que hace: instala el Visual C++ Redistributable (x64), Git, Python 3.12, Java 17 y Tesseract (spa y osd); crea C:\curso\{datos,trabajo,modelos,venv,paquete};
 # crea el entorno virtual con PyTorch, las librerias del curso, el modelo de spaCy y los modelos de Hugging Face (sesion 4);
@@ -15,7 +15,7 @@
 # OLLAMA_MODELS=C:\curso\modelos\ollama y OLLAMA_NO_CLOUD=1, y descarga los modelos qwen3.5:4b, glm-ocr y qwen3.5:9b.
 # En clase, Ollama se instala con este instalador y -SoloOllama en una ventana normal (paso 3 de la guia de la sesion 5).
 #
-# Opciones: -Rama sesion-05 (rama del repositorio) -Sesion 5 (hasta que sesion verifica) -Curso <carpeta> (por omision C:\curso)
+# Opciones: -Rama sesion-09 (rama del repositorio) -Sesion 5 (hasta que sesion verifica) -Curso <carpeta> (por omision C:\curso)
 #           -SoloEntorno (no instala programas del sistema ni pide administrador; para pruebas) -SinClon (no clona el repositorio)
 #           -SinModelosHF (no descarga los modelos de Hugging Face) -CacheHF <carpeta con hub\> (copia los modelos en lugar de descargarlos)
 #           -SinGpu o -IndiceTorch cpu (PyTorch de CPU de PyPI) -Zip <zip del paquete>
@@ -28,7 +28,7 @@
 param(
     [string]$Requirements = "",
     [string]$Curso = "C:\curso",
-    [string]$Rama = "sesion-05",
+    [string]$Rama = "sesion-09",
     [string]$Repositorio = "https://github.com/jonatanfigueroagil-creator/entorno-extraccion-documental",
     [string]$Zip = "",
     [Alias("Modelo")][string[]]$Modelos = @("qwen3.5:4b", "glm-ocr", "qwen3.5:9b"),
@@ -43,7 +43,7 @@ param(
     [switch]$SinModelosHF,
     [string]$CacheHF = "",
     [string]$IndiceTorch = "",
-    [int]$Sesion = 5
+    [int]$Sesion = 9
 )
 $ErrorActionPreference = "Continue"
 $Raiz = if ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { (Get-Location).Path }

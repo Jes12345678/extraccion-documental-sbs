@@ -3,12 +3,18 @@
 
 Uso (PowerShell; se puede ejecutar desde cualquier carpeta, con ruta absoluta):
     C:\\curso\\venv\\Scripts\\python.exe C:\\curso\\trabajo\\entorno-extraccion-documental\\03_verificar_entorno.py --sesion 3
-    python 03_verificar_entorno.py                informe legible hasta la última sesión publicada (la 5)
+    python 03_verificar_entorno.py                informe legible hasta la última sesión publicada (la 6)
     python 03_verificar_entorno.py --sesion 3     comprueba de forma ACUMULADA lo de las sesiones 1 a 3
     python 03_verificar_entorno.py --json         informe en JSON en pantalla
     python 03_verificar_entorno.py --salida informe_entorno.json
                                                   guarda el informe JSON en ese archivo (UTF-8; crea la carpeta si falta).
     python 03_verificar_entorno.py --curso prueba\\curso   usa otra carpeta del curso (pruebas; por omisión C:\\curso)
+    python 03_verificar_entorno.py --sesion 6     la sesión 6 no usa modelos de lenguaje: Ollama no se comprueba (salvo con --con-llm)
+    python 03_verificar_entorno.py --sesion 8     igual que la 6, más Git y el repositorio del equipo (su ausencia es un AVISO); sin Ollama ni Docker
+    python 03_verificar_entorno.py --sesion 7     igual que la 6, más pip wheel (setuptools 70.1 o posterior), venv y escritura en la carpeta
+                                                  trabajo; Docker, WSL y Ollama no son requisito (la DEMO con Docker es del docente)
+    python 03_verificar_entorno.py --sesion 9     igual que la 7, más Git, gh (opcional: su ausencia es un AVISO), el rescate y los insumos
+                                                  de la sesión en la copia del curso y el repositorio del equipo (su ausencia es un AVISO)
     python 03_verificar_entorno.py --sesion 5 --con-llm   después de instalar Ollama: si falta el programa (0.15.5 o
                                                   posterior), la API local, un modelo o una variable, es un ERROR
 
@@ -36,7 +42,7 @@ import urllib.request
 from pathlib import Path
 
 ES_WINDOWS = os.name == "nt"
-ULTIMA_SESION = 5          # última sesión publicada: se actualiza al publicar la siguiente
+ULTIMA_SESION = 9          # última sesión publicada: se actualiza al publicar la siguiente
 ARCHIVO_REQUIREMENTS = Path(__file__).resolve().with_name("02_requirements.txt")
 
 # Módulo que se importa cuando no coincide con el nombre del paquete
@@ -55,6 +61,7 @@ API_OLLAMA = "http://127.0.0.1:11434"
 CON_LLM = False  # con --con-llm, la falta de Ollama, sus modelos o sus variables es un error; por defecto es un aviso (sesión 5)
 RESULTADOS: list[dict[str, str]] = []
 SESION_ACTUAL = 0
+HASTA = 0   # sesión pedida con --sesion: desde la 5 no hay salidas guardadas y la 6 no usa GPU
 CARPETA_CURSO: Path | None = None
 
 
@@ -326,18 +333,21 @@ def verificar_modelos_sesion4() -> None:
     """GPU, PyTorch, modelo de spaCy, modelos de Hugging Face y variables de entorno (sesión 4)."""
     g = "GPU y modelos"
     cod, sal = ejecutar(["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"])
+    sin_gpu = HASTA >= 6   # la sesión 6 no usa GPU: su falta es un dato, no un aviso
+    respaldo = " y con las salidas guardadas" if HASTA < 5 else ""
     if cod != 0:
-        registrar("AVISO", g, "GPU NVIDIA", "no detectada: el curso funciona en CPU (más lento) y con las salidas guardadas")
+        registrar("OK" if sin_gpu else "AVISO", g, "GPU NVIDIA",
+                  "no detectada (dato: la sesión 6 no usa GPU)" if sin_gpu else f"no detectada: el curso funciona en CPU (más lento){respaldo}")
     else:
         nombre = sal.splitlines()[0]
-        registrar("OK" if "T4" in nombre else "AVISO", g, "GPU NVIDIA (nombre, VRAM, controlador)",
-                  nombre if "T4" in nombre else f"{nombre} (se espera una Tesla T4)")
+        registrar("OK" if "T4" in nombre or sin_gpu else "AVISO", g, "GPU NVIDIA (nombre, VRAM, controlador)",
+                  nombre if "T4" in nombre or sin_gpu else f"{nombre} (se espera una Tesla T4)")
     try:
         import torch  # noqa: WPS433
         ok = bool(torch.cuda.is_available())
         arq = ", ".join(torch.cuda.get_arch_list()) if ok else ""
-        registrar("OK" if ok else "AVISO", g, f"PyTorch {torch.__version__} con CUDA",
-                  f"CUDA disponible (arquitecturas: {arq})" if ok else "sin CUDA: se usa la CPU y las salidas guardadas")
+        registrar("OK" if ok or sin_gpu else "AVISO", g, f"PyTorch {torch.__version__} con CUDA",
+                  f"CUDA disponible (arquitecturas: {arq})" if ok else f"sin CUDA: se usa la CPU{respaldo}")
     except Exception as e:  # noqa: BLE001
         registrar("ERROR", g, "PyTorch", f"no se pudo importar ({motivo(e)}; lo instala 01_instalar_vm.ps1)")
     try:
@@ -351,7 +361,7 @@ def verificar_modelos_sesion4() -> None:
         carpeta = hf / "hub" / ("models--" + modelo.replace("/", "--")) / "snapshots"
         listo = carpeta.is_dir() and any(carpeta.glob("*/config.json"))
         registrar("OK" if listo else "AVISO", g, f"Modelo de Hugging Face {modelo}",
-                  str(carpeta.parent) if listo else f"no está en {hf}: 01_instalar_vm.ps1 lo descarga (sin él se usan las salidas guardadas)")
+                  str(carpeta.parent) if listo else f"no está en {hf}: 01_instalar_vm.ps1 lo descarga" + (" (sin él se usan las salidas guardadas)" if HASTA < 5 else " (lo usa la sesión 4)"))
     hf_home = os.environ.get("HF_HOME")
     registrar("OK" if hf_home else "AVISO", "Variables de entorno", "HF_HOME",
               hf_home if hf_home else f"sin definir: se usa {hf} (01_instalar_vm.ps1 la define; abrir una consola nueva)")
@@ -476,6 +486,131 @@ def verificar_ollama() -> None:
               f"1: sin modelos en la nube ({origen})" if valor == "1" else "sin definir: debe valer 1 para que Ollama no use modelos en la nube")
 
 
+def memoria_total_gib() -> float | None:
+    """Memoria física de la máquina en GiB (Windows, sin paquetes adicionales); None si no se puede leer."""
+    if not ES_WINDOWS:
+        return None
+    try:
+        import ctypes
+
+        class Estado(ctypes.Structure):
+            _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong)] + [
+                (nombre, ctypes.c_ulonglong) for nombre in ("ullTotalPhys", "ullAvailPhys", "ullTotalPageFile", "ullAvailPageFile",
+                                                           "ullTotalVirtual", "ullAvailVirtual", "ullAvailExtendedVirtual")]
+
+        estado = Estado()
+        estado.dwLength = ctypes.sizeof(Estado)
+        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(estado))
+        return estado.ullTotalPhys / 2 ** 30
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def verificar_sesion6() -> None:
+    """Sesión 6: DuckDB 1.5.6 escribe y lee un Parquet, el paquete del curso se importa, y la máquina tiene procesadores y memoria."""
+    import tempfile
+
+    g = "Pipeline de extremo a extremo (sesión 6)"
+    try:
+        import duckdb
+
+        if duckdb.__version__ != "1.5.6":
+            registrar("ERROR", g, "DuckDB", f"versión {duckdb.__version__}; el curso usa la 1.5.6 (se repite 01_instalar_vm.ps1)")
+        else:
+            with tempfile.TemporaryDirectory() as carpeta:
+                archivo = (Path(carpeta) / "prueba.parquet").as_posix()
+                duckdb.sql(f"COPY (SELECT 42 AS numero, 'hola' AS texto) TO '{archivo}' (FORMAT parquet)")
+                fila = duckdb.sql(f"SELECT numero, texto FROM read_parquet('{archivo}')").fetchone()
+            registrar("OK" if fila == (42, "hola") else "ERROR", g, "DuckDB y Parquet", "versión 1.5.6; escribe y lee un Parquet de prueba en la carpeta temporal"
+                      if fila == (42, "hola") else f"el Parquet de prueba se leyó distinto: {fila}")
+    except Exception as e:  # noqa: BLE001
+        registrar("ERROR", g, "DuckDB y Parquet", f"no se pudo escribir o leer el Parquet de prueba ({motivo(e)})")
+    try:
+        importlib.import_module("pipeline_sbs.ingesta.cargador")
+        registrar("OK", g, "pipeline_sbs (control de ingesta de la sesión 2)", "se importa")
+    except Exception:  # noqa: BLE001
+        respaldo = Path(__file__).resolve().parent / "04_pipeline_sbs" / "pipeline_sbs" / "ingesta" / "cargador.py"
+        registrar("OK" if respaldo.is_file() else "ERROR", g, "pipeline_sbs (control de ingesta de la sesión 2)",
+                  "no está instalado en el entorno: se toma de la carpeta 04_pipeline_sbs del repositorio" if respaldo.is_file()
+                  else "no está instalado ni existe la carpeta 04_pipeline_sbs: se repite 07_preparar_sesion.ps1 -Sesion 6")
+    logicos = os.cpu_count() or 0
+    registrar("OK" if logicos >= 4 else "AVISO", g, "Procesadores lógicos",
+              f"{logicos}" if logicos >= 4 else f"{logicos}: con menos de 4 se usan menos trabajadores (orquestacion.trabajadores en el YAML)")
+    memoria = memoria_total_gib()
+    if memoria is not None:
+        registrar("OK" if memoria >= 15 else "AVISO", g, "Memoria",
+                  f"{memoria:.1f} GiB" if memoria >= 15 else f"{memoria:.1f} GiB: con menos de 16 GiB se usan 2 trabajadores (cada uno ocupa cerca de 1 GiB)")
+    registrar("OK", g, "Modelos de lenguaje", "la sesión 6 no los usa: Ollama no es requisito")
+
+
+def verificar_sesion7() -> None:
+    """Sesión 7: pip arma ruedas (setuptools 70.1 o posterior), venv crea un entorno limpio y la carpeta de trabajo se puede escribir.
+
+    El participante no usa contenedores ni modelos de lenguaje: la falta de Docker, WSL u Ollama no es un error.
+    """
+    g = "Despliegue y monitoreo (sesión 7)"
+    try:
+        import setuptools
+
+        version = version_tupla(setuptools.__version__)
+        bien = bool(version) and version >= (70, 1)
+        registrar("OK" if bien else "ERROR", g, "setuptools (pip wheel)",
+                  f"versión {setuptools.__version__}" if bien else f"versión {setuptools.__version__}: se necesita 70.1 o posterior (python -m pip install -U setuptools)")
+    except ImportError:
+        registrar("ERROR", g, "setuptools (pip wheel)", "no está en el entorno: C:\\curso\\venv\\Scripts\\python.exe -m pip install setuptools")
+    cod, sal = ejecutar([sys.executable, "-m", "pip", "--version"], 60)
+    registrar("OK" if cod == 0 else "ERROR", g, "pip", sal.split(" from ")[0] if cod == 0 else f"no responde: {sal[:120]}")
+    faltan = [m for m in ("venv", "ensurepip") if importlib.util.find_spec(m) is None]
+    registrar("OK" if not faltan else "ERROR", g, "venv (entorno limpio)", "disponible" if not faltan else f"falta {', '.join(faltan)}: se repite 01_instalar_vm.ps1")
+    trabajo = carpeta_curso() / "trabajo"
+    try:
+        if not trabajo.is_dir():
+            registrar("AVISO", g, "Escritura en la carpeta trabajo", f"{trabajo} no existe todavía: la crea 01_instalar_vm.ps1")
+            raise FileNotFoundError
+        prueba = trabajo / ".prueba_s07"
+        prueba.write_text("ok", encoding="utf-8")
+        prueba.unlink()
+        registrar("OK", g, "Escritura en la carpeta trabajo", str(trabajo))
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        registrar("ERROR", g, "Escritura en la carpeta trabajo", f"{trabajo}: {motivo(e)}")
+    registrar("OK", g, "Contenedores y modelos de lenguaje", "la sesión 7 no los usa en la VM: Docker, WSL y Ollama no son requisito")
+
+
+def verificar_sesion8() -> None:
+    """Sesión 8 (proyecto final): igual que la 6, más Git y el repositorio del equipo (carpeta que contiene ``pf``). Sin modelos de lenguaje ni contenedores."""
+    g = "Proyecto final (sesión 8)"
+    cod, sal = ejecutar(["git", "--version"])
+    registrar("OK" if cod == 0 else "ERROR", g, "Git", sal if cod == 0 else "no instalado: se necesita para subir la parte de cada integrante (se repite 07_preparar_sesion.ps1 -Sesion 8)")
+    trabajo = carpeta_curso() / "trabajo"
+    equipos = sorted(c.name for c in trabajo.glob("*") if (c / "pf" / "__init__.py").is_file()) if trabajo.is_dir() else []
+    registrar("OK" if equipos else "AVISO", g, "Repositorio del equipo",
+              f"carpeta {equipos[0]} (contiene pf)" if equipos else "todavía no está clonado en la carpeta trabajo: se clona en la sesión, con la guía (no es un error)")
+    registrar("OK", g, "Modelos de lenguaje y contenedores", "la sesión 8 no los usa: Ollama y Docker no son requisito")
+
+
+def verificar_sesion9() -> None:
+    """Sesión 9 (clase adicional): igual que la 7, más Git, gh (opcional), el rescate y los insumos publicados en la copia del curso
+    y el repositorio del equipo (carpeta pipeline-equipo-*, su ausencia es un AVISO). No agrega paquetes ni usa modelos de lenguaje."""
+    g = "Pipeline del equipo desde cero (sesión 9)"
+    cod, sal = ejecutar(["git", "--version"])
+    registrar("OK" if cod == 0 else "ERROR", g, "Git", sal if cod == 0 else "no instalado: se necesita para el repositorio del equipo (se repite 07_preparar_sesion.ps1 -Sesion 9)")
+    cod, sal = ejecutar(["gh", "--version"])
+    registrar("OK" if cod == 0 else "AVISO", g, "gh (GitHub CLI)", sal.splitlines()[0] if cod == 0 and sal else
+              "no está: es opcional; los pull requests se abren y se unen en la página de GitHub")
+    trabajo = carpeta_curso() / "trabajo"
+    clon = trabajo / "entorno-extraccion-documental" / "05_Laboratorios"
+    faltan = [r for r in ("s09/rescate_s09.py", "s09/exactitud_equipo.py", "referencia_mi_pipeline_s07/__init__.py",
+                          "datos_s09/01_insumos_flujo_A.zip", "datos_s09/04_insumos_flujo_D.zip") if not (clon / r).is_file()]
+    registrar("OK" if not faltan else "AVISO", g, "Rescate e insumos en la copia del curso",
+              str(clon) if not faltan else f"faltan {', '.join(faltan)}: se repite 07_preparar_sesion.ps1 -Sesion 9 (trae la rama sesion-09)")
+    equipos = sorted(c.name for c in trabajo.glob("pipeline-equipo-*") if (c / ".git").exists()) if trabajo.is_dir() else []
+    registrar("OK" if equipos else "AVISO", g, "Repositorio del equipo",
+              f"carpeta {equipos[0]}" if equipos else "todavía no está clonado en la carpeta trabajo: se clona en la sesión, con la guía (no es un error)")
+    registrar("OK", g, "Modelos de lenguaje y contenedores", "la sesión 9 no los usa: Ollama y Docker no son requisito")
+
+
 def imprimir(hasta: int) -> None:
     """Informe legible en consola, con un resumen por sesión."""
     marcas = {"OK": "[ OK  ]", "AVISO": "[AVISO]", "ERROR": "[ERROR]"}
@@ -524,11 +659,12 @@ def main() -> int:
     ap.add_argument("--con-llm", action="store_true", help="exige Ollama y sus modelos (desde la sesión 5)")
     ap.add_argument("--curso", metavar="CARPETA", help="carpeta del curso (por omisión C:\\curso)")
     a = ap.parse_args()
-    global CON_LLM, CARPETA_CURSO, SESION_ACTUAL
+    global CON_LLM, CARPETA_CURSO, SESION_ACTUAL, HASTA
     CON_LLM = a.con_llm
     if a.curso:
         CARPETA_CURSO = Path(a.curso).resolve()
     hasta = max(1, min(a.sesion, 9))
+    HASTA = hasta
     configurar_consola()
     requisitos = leer_requirements()
     SESION_ACTUAL = 0
@@ -546,9 +682,16 @@ def main() -> int:
         elif s == 4:
             verificar_modelos_sesion4()
         elif s == 5:
-            verificar_ollama()
+            if hasta == 5 or CON_LLM:      # desde la sesión 6 no se usa ningún modelo de lenguaje: Ollama solo se comprueba si se pide
+                verificar_ollama()
+        elif s == 6:
+            verificar_sesion6()
         elif s == 7:
-            verificar_docker()
+            verificar_sesion7()       # desde el 19/11/2026 el participante no usa contenedores: Docker no se comprueba
+        elif s == 8 and hasta == 8:
+            verificar_sesion8()       # el repositorio del proyecto (pf) de la sesión 8; desde la 9 se revisa el del equipo nuevo
+        elif s == 9:
+            verificar_sesion9()
     if a.salida:
         destino = Path(a.salida).expanduser()
         destino.parent.mkdir(parents=True, exist_ok=True)
